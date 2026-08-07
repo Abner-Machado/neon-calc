@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Calculadora de arquivo único: quando a conta não tem resposta possível, o visor responde.">
+<meta name="theme-color" content="#05070d">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23080c16'/%3E%3Cpath d='M8 12h16M8 20h16M13 16h6' stroke='%2335e6ff' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
+<title>Calculadora</title>
+<style>
+  :root {
+    --void: #05070d;
+    --deep: #080c16;
+    --cyan: #35e6ff;
+    --violet: #9b6cff;
+    --lime: #6cff9b;
+    --rose: #ff5c86;
+    --ink: #e8f4ff;
+    /* 6.8:1 sobre o painel. O tom anterior (#6d8098) dava 4.29:1 e reprovava
+       no mínimo de 4,5:1 da WCAG AA para texto pequeno. */
+    --muted: #8ea4bd;
+    --glass: rgba(18, 26, 42, .58);
+    --edge: rgba(120, 200, 255, .18);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: var(--void);
+    color: var(--ink);
+    font-family: "Segoe UI", system-ui, sans-serif;
+    overflow: hidden;
+  }
+
+  /* ---------- fundo: aurora + grade em fuga ---------- */
+  .aurora, .grade, .vinheta { position: fixed; inset: 0; pointer-events: none; }
+
+  .aurora {
+    background:
+      radial-gradient(38vw 38vw at 18% 22%, rgba(53, 230, 255, .22), transparent 62%),
+      radial-gradient(34vw 34vw at 82% 30%, rgba(155, 108, 255, .20), transparent 62%),
+      radial-gradient(40vw 40vw at 50% 92%, rgba(108, 255, 155, .13), transparent 60%);
+    filter: blur(14px);
+    animation: derivar 22s ease-in-out infinite alternate;
+  }
+  @keyframes derivar {
+    from { transform: translate3d(-2%, -1%, 0) scale(1);    }
+    to   { transform: translate3d( 2%,  2%, 0) scale(1.08); }
+  }
+
+  .grade {
+    background-image:
+      linear-gradient(rgba(53, 230, 255, .10) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(53, 230, 255, .10) 1px, transparent 1px);
+    background-size: 46px 46px;
+    mask-image: linear-gradient(transparent 42%, #000 88%);
+    transform: perspective(420px) rotateX(66deg) translateY(28%) scale(2.1);
+    transform-origin: bottom;
+    animation: correr 6s linear infinite;
+  }
+  @keyframes correr { to { background-position: 0 46px; } }
+
+  .vinheta { background: radial-gradient(circle at 50% 45%, transparent 42%, var(--void) 92%); }
+
+  /* ---------- painel ---------- */
+  .maquina {
+    position: relative;
+    width: min(380px, 100%);
+    padding: 22px;
+    border-radius: 26px;
+    background: var(--glass);
+    border: 1px solid var(--edge);
+    backdrop-filter: blur(18px) saturate(140%);
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, .03) inset,
+      0 30px 80px rgba(0, 0, 0, .65),
+      0 0 60px rgba(53, 230, 255, .10);
+  }
+  /* fio de luz correndo pela borda */
+  .maquina::before {
+    content: "";
+    position: absolute; inset: -1px;
+    border-radius: inherit;
+    padding: 1px;
+    background: conic-gradient(from var(--giro, 0deg),
+      transparent 0 62%, var(--cyan) 74%, var(--violet) 84%, transparent 92%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+            mask-composite: exclude;
+    animation: girar 7s linear infinite;
+  }
+  @property --giro { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+  @keyframes girar { to { --giro: 360deg; } }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 12px; letter-spacing: .6px;
+    color: var(--muted); padding: 0 4px 14px;
+  }
+  .pulso {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--lime); box-shadow: 0 0 12px var(--lime);
+    animation: piscar 2.4s ease-in-out infinite;
+  }
+  @keyframes piscar { 50% { opacity: .25; box-shadow: 0 0 4px var(--lime); } }
+
+  /* ---------- visor ---------- */
+  .visor {
+    position: relative;
+    border-radius: 16px;
+    padding: 16px 18px 18px;
+    margin-bottom: 16px;
+    background: linear-gradient(180deg, rgba(6, 12, 22, .92), rgba(6, 12, 22, .62));
+    border: 1px solid rgba(53, 230, 255, .16);
+    overflow: hidden;
+  }
+  .visor::after {  /* varredura de linhas */
+    content: "";
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(180deg, rgba(255,255,255,.045) 0 1px, transparent 1px 3px);
+    pointer-events: none;
+  }
+  .fita { min-height: 18px; text-align: right; font-size: 13px; color: var(--muted); letter-spacing: 1px; }
+  .saida {
+    text-align: right;
+    font-size: clamp(30px, 9vw, 46px);
+    font-weight: 600;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+    text-shadow: 0 0 22px rgba(53, 230, 255, .45);
+    transition: color .18s, text-shadow .18s;
+  }
+  .saida.bronca {
+    color: var(--rose);
+    font-size: clamp(20px, 6vw, 27px);
+    text-shadow: 0 0 26px rgba(255, 92, 134, .55);
+    animation: tremer .42s ease;
+  }
+  @keyframes tremer {
+    10%, 90% { transform: translateX(-2px); }
+    30%, 70% { transform: translateX(4px); }
+    50%      { transform: translateX(-4px); }
+  }
+
+  /* ---------- teclas ---------- */
+  .teclado { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; }
+
+  button {
+    position: relative;
+    /* encolhe em tela baixa para o teclado inteiro caber sem rolagem */
+    height: clamp(44px, 8.2vh, 58px);
+    border: 1px solid rgba(140, 200, 255, .14);
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(30, 42, 62, .85), rgba(16, 24, 38, .85));
+    color: var(--ink);
+    font: 500 19px/1 "Segoe UI", system-ui, sans-serif;
+    cursor: pointer;
+    overflow: hidden;
+    transition: transform .08s, border-color .18s, box-shadow .18s, background .18s;
+  }
+  button:hover {
+    border-color: rgba(53, 230, 255, .55);
+    box-shadow: 0 0 18px rgba(53, 230, 255, .22), 0 0 30px rgba(53, 230, 255, .10) inset;
+  }
+  button:active { transform: translateY(2px) scale(.98); }
+  button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+  .op    { color: var(--cyan);   background: linear-gradient(180deg, rgba(20, 52, 68, .9), rgba(12, 30, 44, .9)); }
+  .fn    { color: var(--violet); font-size: 17px; }
+  .igual {
+    color: #04121a; font-weight: 700;
+    background: linear-gradient(180deg, var(--cyan), #17b9d8);
+    border-color: transparent;
+    box-shadow: 0 0 26px rgba(53, 230, 255, .40);
+  }
+  .igual:hover { box-shadow: 0 0 34px rgba(53, 230, 255, .65); }
+  .larga { grid-column: span 2; }
+
+  /* onda ao clicar */
+  .onda {
+    position: absolute; border-radius: 50%;
+    background: rgba(53, 230, 255, .35);
+    transform: translate(-50%, -50%) scale(0);
+    animation: abrir .5s ease-out forwards;
+    pointer-events: none;
+  }
+  @keyframes abrir { to { transform: translate(-50%, -50%) scale(9); opacity: 0; } }
+
+  footer { margin-top: 14px; text-align: center; font-size: 11px; color: var(--muted); letter-spacing: 1.4px; }
+
+  @media (max-height: 700px) {
+    .maquina { padding: 16px; border-radius: 20px; }
+    .visor { padding: 10px 14px 12px; margin-bottom: 11px; }
+    .saida { font-size: clamp(26px, 6vh, 38px); }
+    .teclado { gap: 7px; }
+    header { padding-bottom: 10px; }
+    footer { margin-top: 10px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .aurora, .grade, .maquina::before, .pulso, .saida.bronca, .onda { animation: none; }
+  }
+</style>
+
+<div class="aurora"></div>
+<div class="grade"></div>
+<div class="vinheta"></div>
+
+<main class="maquina">
+  <header><span>calculadora</span><span class="pulso"></span></header>
+
+  <section class="visor">
+    <div class="fita" id="fita"></div>
+    <div class="saida" id="saida" aria-live="polite">0</div>
+  </section>
+
+  <div class="teclado" id="teclado">
+    <button class="fn" data-acao="limpar" aria-label="limpar">C</button>
+    <button class="fn" data-acao="sinal" aria-label="trocar o sinal">±</button>
+    <button class="fn" data-acao="porcento" aria-label="porcentagem">%</button>
+    <button class="op" data-op="/" aria-label="dividir">÷</button>
+
+    <button class="fn" data-acao="raiz" aria-label="raiz quadrada">√</button>
+    <button data-num="7">7</button>
+    <button data-num="8">8</button>
+    <button data-num="9">9</button>
+
+    <button class="op" data-op="*" aria-label="multiplicar">×</button>
+    <button data-num="4">4</button>
+    <button data-num="5">5</button>
+    <button data-num="6">6</button>
+
+    <button class="op" data-op="-" aria-label="subtrair">−</button>
+    <button data-num="1">1</button>
+    <button data-num="2">2</button>
+    <button data-num="3">3</button>
+
+    <button class="op" data-op="+" aria-label="somar">+</button>
+    <button data-num="0">0</button>
+    <button data-acao="virgula" aria-label="vírgula">,</button>
+    <button class="fn" data-acao="apagar" aria-label="apagar um dígito">⌫</button>
+
+    <button class="igual larga" data-acao="igual" aria-label="calcular">=</button>
+    <button class="fn larga" data-acao="limpar">limpar</button>
+  </div>
+
+  <footer>enter calcula · esc limpa · r tira a raiz</footer>
+</main>
+
+<script>
+(() => {
+  const elSaida = document.getElementById("saida");
+  const elFita  = document.getElementById("fita");
+  const SIMBOLO = { "/": "÷", "*": "×", "-": "−", "+": "+" };
+  const BRONCA  = "vc não é burro";
+
+  let atual = "0", anterior = null, operador = null, recemCalculado = false;
+
+  const brasileiro = t => String(t).replace(".", ",");
+
+  function pintar(texto = null) {
+    elSaida.classList.remove("bronca");
+    elSaida.style.removeProperty("font-size");
+    elSaida.textContent = texto ?? brasileiro(atual);
+    elFita.textContent = operador ? `${brasileiro(anterior)} ${SIMBOLO[operador]}` : "";
+  }
+
+  // Toda conta sem resposta possível cai aqui: dividir por zero, raiz de
+  // negativo, ou um número que estourou o que o navegador consegue representar.
+  function bronca() {
+    elSaida.classList.remove("bronca");
+    void elSaida.offsetWidth;          // reinicia a animação se repetir o erro
+    elSaida.classList.add("bronca");
+    elSaida.textContent = BRONCA;
+    elFita.textContent = "";
+    atual = "0"; anterior = null; operador = null; recemCalculado = true;
+  }
+
+  const impossivel = n => !Number.isFinite(n);
+
+  function limpar24(n) {
+    // 0,1 + 0,2 devolve 0,30000000000000004 em ponto flutuante. Doze casas
+    // cortam o ruído sem estragar conta de verdade.
+    return Math.round(n * 1e12) / 1e12;
+  }
+
+  function digitar(d) {
+    if (recemCalculado) { atual = "0"; recemCalculado = false; }
+    if (atual.replace(/[-.]/g, "").length >= 15) return;   // trava antes da imprecisão
+    atual = atual === "0" ? d : atual + d;
+    pintar();
+  }
+
+  function virgula() {
+    if (recemCalculado) { atual = "0"; recemCalculado = false; }
+    if (!atual.includes(".")) atual += ".";
+    pintar();
+  }
+
+  function conta(a, op, b) {
+    if (op === "/" && b === 0) return null;
+    return limpar24({ "+": a + b, "-": a - b, "*": a * b, "/": a / b }[op]);
+  }
+
+  function escolherOperador(op) {
+    if (operador && !recemCalculado && !igual()) return;
+    anterior = parseFloat(atual);
+    operador = op;
+    recemCalculado = true;
+    pintar();
+  }
+
+  function igual() {
+    if (operador === null || anterior === null) return true;
+    const r = conta(anterior, operador, parseFloat(atual));
+    if (r === null || impossivel(r)) { bronca(); return false; }
+    atual = String(r);
+    anterior = null; operador = null; recemCalculado = true;
+    pintar();
+    return true;
+  }
+
+  const acoes = {
+    igual, virgula,
+    limpar: () => { atual = "0"; anterior = null; operador = null; recemCalculado = false; pintar(); },
+    apagar: () => { atual = atual.length > 1 ? atual.slice(0, -1) : "0"; pintar(); },
+    sinal:  () => { atual = String(limpar24(parseFloat(atual) * -1)); pintar(); },
+    raiz:   () => {
+      const n = parseFloat(atual);
+      if (n < 0) return bronca();                 // raiz de negativo não existe aqui
+      atual = String(limpar24(Math.sqrt(n)));
+      recemCalculado = true;
+      pintar();
+    },
+    porcento: () => {
+      const n = parseFloat(atual) / 100;
+      atual = String(limpar24(operador && anterior !== null ? anterior * n : n));
+      pintar();
+    },
+  };
+
+  document.getElementById("teclado").addEventListener("click", e => {
+    const b = e.target.closest("button");
+    if (!b) return;
+
+    const r = b.getBoundingClientRect();
+    const onda = document.createElement("span");
+    onda.className = "onda";
+    onda.style.left = `${e.clientX - r.left}px`;
+    onda.style.top = `${e.clientY - r.top}px`;
+    onda.style.width = onda.style.height = `${r.width / 4}px`;
+    b.appendChild(onda);
+    setTimeout(() => onda.remove(), 520);
+
+    if (b.dataset.num) return digitar(b.dataset.num);
+    if (b.dataset.op) return escolherOperador(b.dataset.op);
+    if (b.dataset.acao) return acoes[b.dataset.acao]();
+  });
+
+  document.addEventListener("keydown", e => {
+    if (e.key >= "0" && e.key <= "9") return digitar(e.key);
+    if (["+", "-", "*", "/"].includes(e.key)) return escolherOperador(e.key);
+    if (e.key === "Enter" || e.key === "=") { e.preventDefault(); return igual(); }
+    if (e.key === "Backspace") return acoes.apagar();
+    if (e.key === "Escape") return acoes.limpar();
+    if (e.key === "," || e.key === ".") return virgula();
+    if (e.key === "%") return acoes.porcento();
+    if (e.key === "r") return acoes.raiz();
+  });
+
+  pintar();
+})();
+</script>
+</html>
