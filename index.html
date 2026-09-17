@@ -259,14 +259,15 @@
   const BRONCA  = "vc não é burro";
 
   let atual = "0", anterior = null, operador = null, recemCalculado = false;
+  let exato = false;   // atual guarda um resultado com toda a precisão; só o visor arredonda
 
   const brasileiro = t => String(t).replace(".", ",");
 
   function pintar(texto = null) {
     elSaida.classList.remove("bronca");
     elSaida.style.removeProperty("font-size");
-    elSaida.textContent = texto ?? brasileiro(atual);
-    elFita.textContent = operador ? `${brasileiro(anterior)} ${SIMBOLO[operador]}` : "";
+    elSaida.textContent = texto ?? brasileiro(exato ? limpar24(parseFloat(atual)) : atual);
+    elFita.textContent = operador ? `${brasileiro(limpar24(anterior))} ${SIMBOLO[operador]}` : "";
   }
 
   // Toda conta sem resposta possível cai aqui: dividir por zero, raiz de
@@ -277,33 +278,34 @@
     elSaida.classList.add("bronca");
     elSaida.textContent = BRONCA;
     elFita.textContent = "";
-    atual = "0"; anterior = null; operador = null; recemCalculado = true;
+    atual = "0"; anterior = null; operador = null; recemCalculado = true; exato = false;
   }
 
   const impossivel = n => !Number.isFinite(n);
 
   function limpar24(n) {
     // 0,1 + 0,2 devolve 0,30000000000000004 em ponto flutuante. Doze casas
-    // cortam o ruído sem estragar conta de verdade.
+    // cortam o ruído sem estragar conta de verdade. Só o visor passa por aqui:
+    // a conta seguinte usa o valor inteiro, senão 1 ÷ 3 × 3 vira 0,999999999999.
     return Math.round(n * 1e12) / 1e12;
   }
 
   function digitar(d) {
-    if (recemCalculado) { atual = "0"; recemCalculado = false; }
+    if (recemCalculado) { atual = "0"; recemCalculado = false; exato = false; }
     if (atual.replace(/[-.]/g, "").length >= 15) return;   // trava antes da imprecisão
     atual = atual === "0" ? d : atual + d;
     pintar();
   }
 
   function virgula() {
-    if (recemCalculado) { atual = "0"; recemCalculado = false; }
+    if (recemCalculado) { atual = "0"; recemCalculado = false; exato = false; }
     if (!atual.includes(".")) atual += ".";
     pintar();
   }
 
   function conta(a, op, b) {
     if (op === "/" && b === 0) return null;
-    return limpar24({ "+": a + b, "-": a - b, "*": a * b, "/": a / b }[op]);
+    return { "+": a + b, "-": a - b, "*": a * b, "/": a / b }[op];
   }
 
   function escolherOperador(op) {
@@ -319,26 +321,30 @@
     const r = conta(anterior, operador, parseFloat(atual));
     if (r === null || impossivel(r)) { bronca(); return false; }
     atual = String(r);
-    anterior = null; operador = null; recemCalculado = true;
+    anterior = null; operador = null; recemCalculado = true; exato = true;
     pintar();
     return true;
   }
 
   const acoes = {
     igual, virgula,
-    limpar: () => { atual = "0"; anterior = null; operador = null; recemCalculado = false; pintar(); },
-    apagar: () => { atual = atual.length > 1 ? atual.slice(0, -1) : "0"; pintar(); },
-    sinal:  () => { atual = String(limpar24(parseFloat(atual) * -1)); pintar(); },
+    limpar: () => { atual = "0"; anterior = null; operador = null; recemCalculado = false; exato = false; pintar(); },
+    apagar: () => {
+      if (exato) { atual = String(limpar24(parseFloat(atual))); exato = false; }   // apaga o que está no visor
+      atual = atual.length > 1 ? atual.slice(0, -1) : "0"; pintar();
+    },
+    sinal:  () => { atual = String(parseFloat(atual) * -1); pintar(); },
     raiz:   () => {
       const n = parseFloat(atual);
       if (n < 0) return bronca();                 // raiz de negativo não existe aqui
-      atual = String(limpar24(Math.sqrt(n)));
-      recemCalculado = true;
+      atual = String(Math.sqrt(n));
+      recemCalculado = true; exato = true;
       pintar();
     },
     porcento: () => {
       const n = parseFloat(atual) / 100;
-      atual = String(limpar24(operador && anterior !== null ? anterior * n : n));
+      atual = String(operador && anterior !== null ? anterior * n : n);
+      exato = true;
       pintar();
     },
   };
